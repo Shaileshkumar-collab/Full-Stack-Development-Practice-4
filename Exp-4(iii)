@@ -1,0 +1,80 @@
+const express = require('express');
+const app = express();
+const port = 3000;
+app.use(express.json());
+let seats = {
+"1": { status: "available" },
+"2": { status: "available" },
+"3": { status: "available" },
+"4": { status: "available" },
+"5": { status: "available" }
+};
+const lockedSeats = {};
+const LOCK_TIMEOUT = 60 * 1000;
+function cleanupExpiredLocks() {
+const now = Date.now();
+for (const seatId in lockedSeats) {
+if (lockedSeats[seatId].expiresAt < now) {
+if (seats[seatId] && seats[seatId].status === "locked") {
+seats[seatId].status = "available";
+}
+delete lockedSeats[seatId];
+}
+}
+}
+setInterval(cleanupExpiredLocks, 30000);
+app.get('/seats', (req, res) => {
+cleanupExpiredLocks();
+res.status(200).json(seats);
+});
+app.post('/lock/:seatId', (req, res) => {
+if (!seats[seatId]) {
+return res.status(404).json({ message: `Seat ${seatId} not found` });
+}
+if (seats[seatId].status === "booked") {
+return res.status(400).json({ message: `Seat ${seatId} is already booked` });
+}
+if (seats[seatId].status === "locked") {
+if (lockedSeats[seatId] && lockedSeats[seatId].expiresAt > Date.now()) {
+return res.status(400).json({ message: `Seat ${seatId} is already locked` });
+} else {
+delete lockedSeats[seatId];
+}
+}
+seats[seatId].status = "locked";
+const expiresAt = Date.now() + LOCK_TIMEOUT;
+lockedSeats[seatId] = { expiresAt };
+res.status(200).json({ 
+message: `Seat ${seatId} locked successfully. Confirm within 1 minute.` 
+});
+});
+app.post('/confirm/:seatId', (req, res) => {
+const seatId = req.params.seatId;
+
+// Check if seat exists
+if (!seats[seatId]) {
+return res.status(404).json({ message: `Seat ${seatId} not found` });
+}
+if (seats[seatId].status === "booked") {
+return res.status(400).json({ message: `Seat ${seatId} is already booked` });
+}
+if (seats[seatId].status !== "locked") {
+return res.status(400).json({ message: "Seat is not locked and cannot be booked" });
+}
+if (!lockedSeats[seatId] || lockedSeats[seatId].expiresAt <= Date.now()) {
+seats[seatId].status = "available";
+if (lockedSeats[seatId]) {
+delete lockedSeats[seatId];
+}
+return res.status(400).json({ message: "Seat lock has expired. Please try again." });
+}
+seats[seatId].status = "booked";
+delete lockedSeats[seatId];
+res.status(200).json({ 
+message: `Seat ${seatId} booked successfully!` 
+});
+});
+app.listen(port, () => {
+console.log(`Ticket booking system running on http://localhost:${port}`);
+});
+module.exports = app;
